@@ -20,10 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -71,7 +68,7 @@ public class PreFilter implements GlobalFilter, Ordered {
                         List<String> token = Objects.requireNonNull(exchange.getRequest().getHeaders().get(HttpHeaders.AUTHORIZATION)).stream().filter(header -> header.contains("Bearer ")).toList();
                         String jwtToken = token.get(0).substring(7);
                         String username = jwtTokenUtil.getUsernameFromToken(jwtToken);
-                        return blockUserBasedOnRole(Utility.roleConvertor(jwtTokenUtil.getRoleFromToken(jwtToken)), url, exchange, username, chain);
+                        return blockUserBasedOnRole(Utility.roleConvertor(Optional.of(jwtTokenUtil.getRoleFromToken(jwtToken))), url, exchange, username, chain);
                     } catch (SessionTimeOutException | ExpiredJwtException exception) {
                         log.error(exception.getLocalizedMessage());
                         return Mono.error(exception);

@@ -4,6 +4,7 @@ import com.dosmartie.helper.AccessProviders;
 import com.dosmartie.helper.Utility;
 import com.dosmartie.request.AuthRequest;
 import com.dosmartie.response.AuthResponse;
+import com.dosmartie.response.BaseResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,8 @@ import reactor.core.publisher.Mono;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -45,15 +48,12 @@ public class PostFilter implements GlobalFilter, Ordered {
     private ObjectMapper mapper;
     @Autowired
     private JwtTokenUtil jwtTokenUtil;
-    static AtomicReference<String> email = new AtomicReference<>("");
-    static AtomicReference<String> roles = new AtomicReference<>("");
 
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String url = exchange.getRequest().getURI().getPath();
-        if (url.contains("sign-in")) {
-
+        if (url.contains("/bynit-member/sign-in")) {
             return new ModifyRequestBodyGatewayFilterFactory().apply(readRequestBody()).filter(writeResponse(exchange), chain);
         } else {
             return chain.filter(exchange);
@@ -67,6 +67,7 @@ public class PostFilter implements GlobalFilter, Ordered {
     }
 
     private ModifyRequestBodyGatewayFilterFactory.Config readRequestBody() {
+
         return new ModifyRequestBodyGatewayFilterFactory.Config()
                 .setRewriteFunction(String.class, String.class, (request, originalRequestBody) -> {
                     AuthRequest authRequest = null;
@@ -75,8 +76,8 @@ public class PostFilter implements GlobalFilter, Ordered {
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException(e);
                     }
-                    email.lazySet(authRequest.getEmail());
-                    roles.lazySet(authRequest.getRole().name());
+                    request.getAttributes().put("email",authRequest.getEmail());
+                    request.getAttributes().put("role",authRequest.getRole().name());
                     return Mono.just(originalRequestBody);
                 });
     }
@@ -108,11 +109,13 @@ public class PostFilter implements GlobalFilter, Ordered {
         assert responseStatus != null;
         if (responseStatus.equals(HttpStatus.OK)) {
             String uuid = generateUUID();
-            redisTemplate.opsForValue().set(uuid, jwtTokenUtil.generateToken(new AuthRequest(email.get(), null, Utility.roleConvertor(roles.get()))));
+            String token = jwtTokenUtil.generateToken(new AuthRequest(exchange.getAttribute("email"), null, Utility.roleConvertor(Optional.ofNullable(exchange.getAttribute("role")))));
+            System.out.println(token);
+            redisTemplate.opsForValue().set(uuid, token);
             redisTemplate.expire(uuid, 1, TimeUnit.HOURS);
             return mapper.writeValueAsBytes(new AuthResponse(uuid));
         } else {
-            throw new RuntimeException("Unable to write bytes");
+            return mapper.writeValueAsBytes(new BaseResponse<>("INVALID CREDENTIAL", "NOT AUTHENTICATED", false, HttpStatus.UNAUTHORIZED.value(), null));
         }
     }
 
